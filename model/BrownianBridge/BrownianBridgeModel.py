@@ -254,7 +254,7 @@ class BrownianBridgeModel(nn.Module):
                 desc=f"sampling loop time step",
                 total=len(self.steps),
             ):
-                img, x0_recon = self.p_sample(
+                img, x0_recon = self.p_sample_grad(
                     x_t=imgs[-1], y=y, context=context, i=i, clip_denoised=clip_denoised
                 )
                 imgs.append(img)
@@ -267,7 +267,7 @@ class BrownianBridgeModel(nn.Module):
                 desc=f"sampling loop time step",
                 total=len(self.steps),
             ):
-                img, _ = self.p_sample(
+                img, _ = self.p_sample_grad(
                     x_t=img, y=y, context=context, i=i, clip_denoised=clip_denoised
                 )
             return img
@@ -279,4 +279,3 @@ class BrownianBridgeModel(nn.Module):
     @torch.no_grad()
     def sample(self, y, context=None, clip_denoised=True, sample_mid_step=False):
         return self.p_sample_loop(y, context, clip_denoised, sample_mid_step)
-
