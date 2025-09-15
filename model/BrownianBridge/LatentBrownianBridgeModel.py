@@ -94,6 +94,31 @@ class LatentBrownianBridgeModel(BrownianBridgeModel):
         # Stack into batch
         return torch.stack(resized_masks)  # shape: (B, 1, new_H, new_W)
     
+    def resize_and_blur_masks(self, masks, factor=4, kernel_size=3, sigma=1.0):
+        B, C, H, W = masks.shape
+        assert C == 1, "This function expects masks with 1 channel"
+
+        new_H, new_W = H // factor, W // factor
+        resized_masks = []
+
+        for i in range(B):
+            # Convert tensor to numpy
+            mask_np = masks[i, 0].cpu().numpy().astype(np.uint8)
+
+            # Resize with nearest neighbor (to preserve binary mask structure)
+            resized_np = cv2.resize(mask_np, (new_W, new_H), interpolation=cv2.INTER_NEAREST).astype(np.float32)
+            # Apply Gaussian blur
+            blurred_np = cv2.GaussianBlur(resized_np, (kernel_size, kernel_size), sigma).astype(np.float32)
+            feathered_mask = blurred_np.copy()
+            feathered_mask[resized_np > 0] = resized_np[resized_np > 0]
+            # Convert back to tensor and add channel dim
+            blurred_tensor = torch.from_numpy(feathered_mask).unsqueeze(0)  # shape: (1, new_H, new_W)
+            resized_masks.append(blurred_tensor)
+
+        # Stack into batch
+        return torch.stack(resized_masks)  # shape: (B, 1, new_H, new_W)
+
+
     def forward(self, x, x_mask, x_cond, x_cond_mask, loss_type = 'general', context=None, lambda_fg=1.0, lambda_bg=1.0):
         # x = x_0 = franka image
         # x_cond = x_T = xArm image
@@ -103,7 +128,7 @@ class LatentBrownianBridgeModel(BrownianBridgeModel):
             x_cond_latent = self.encode(x_cond, cond=True)
 
         context = self.get_cond_stage_context(x_cond)  # None
-        latent_loss, log_dict = super().forward(x_latent.detach(), x_cond_latent.detach(), context, self.resize_and_dilate_masks(x_mask), self.resize_and_dilate_masks(x_cond_mask))
+        latent_loss, log_dict = super().forward(x_latent.detach(), x_cond_latent.detach(), context, self.resize_and_dilate_masks(x_mask,kernel_size=2,iterations=1),self.resize_and_dilate_masks(x_cond_mask,kernel_size=2,iterations=1))
 
         if loss_type == 'no-mask':
             return latent_loss,log_dict

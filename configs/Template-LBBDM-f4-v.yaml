@@ -17,10 +17,11 @@ testing:
   sample_num: 5
 
 data:
-  dataset_name: "real_to_real_masks"
+  dataset_name: "franka-to-xarm-lite-sim"
   dataset_type: "custom_aligned"
   dataset_config:
-    dataset_path: "cross-emb-real-masks" # change 2 rel path later
+    dataset_path: "training_data/paired-lite-6"
+     # change 2 rel path later
     image_size: 256
     channels: 3
     to_normal: True
@@ -41,8 +42,8 @@ model:
   latent_before_quant_conv: False
   normalize_latent: False
   only_load_latent_mean_std: False
-  model_load_path: "results/real_to_real_masks/LBBDM-f4/checkpoint/top_model_epoch_448.pth" # model checkpoint path
-  optim_sche_load_path: "results/real_to_real_masks/LBBDM-f4/checkpoint/top_optim_sche_epoch_448.pth" # optimizer scheduler checkpoint path
+  # model_load_path: "results/reverse-training-real-dataset/LBBDM-f4/checkpoint/top_model_epoch_998.pth" # model checkpoint path
+  # optim_sche_load_path: "results/reverse-training-real-dataset/LBBDM-f4/checkpoint/top_optim_sche_epoch_998.pth" # optimizer scheduler checkpoint path
 
   EMA:
     use_ema: True
