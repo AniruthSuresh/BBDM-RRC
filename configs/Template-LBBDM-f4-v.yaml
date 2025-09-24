@@ -8,7 +8,7 @@ training:
   sample_interval: 2
   validation_interval: 2
   accumulate_grad_batches: 4
-  loss_type : 'no-mask' 
+  loss_type : 'latent-mask-loss' 
   
 # choose from general (franka fg, not franka bg), union (franka and xarm fg, 1 - fg bg), union-diff (franka fg, 1 - (franka and xarm) bg) or no-mask
 
@@ -16,16 +16,18 @@ testing:
   clip_denoised: False
   sample_num: 5
 
+
 data:
-  dataset_name: "franka-to-xarm-lite-sim"
-  dataset_type: "custom_aligned"
+  dataset_name: "franka-to-xarm-lite-sim-cam-pose"
+  dataset_type: "custom_aligned_camera" # use custom_aligned for data without camera params
   dataset_config:
-    dataset_path: "training_data/paired-lite-6"
+    dataset_path: "training_data/paired-lite-6-cam-pose"
      # change 2 rel path later
     image_size: 256
     channels: 3
     to_normal: True
     flip: False
+    use_cam_params : True
   train:
     batch_size: 8
     shuffle: False
@@ -44,6 +46,9 @@ model:
   only_load_latent_mean_std: False
   # model_load_path: "results/reverse-training-real-dataset/LBBDM-f4/checkpoint/top_model_epoch_998.pth" # model checkpoint path
   # optim_sche_load_path: "results/reverse-training-real-dataset/LBBDM-f4/checkpoint/top_optim_sche_epoch_998.pth" # optimizer scheduler checkpoint path
+
+  CameraProj:
+    use_cam_proj: True
 
   EMA:
     use_ema: True

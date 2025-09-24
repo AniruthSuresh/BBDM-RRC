@@ -210,10 +210,18 @@ class BBDMRunner(DiffusionBaseRunner):
         self.logger(self.net.cond_latent_std)
 
     def loss_fn(self, net, batch, epoch, step, opt_idx=0, stage="train", write=True):
-        (x, x_name, x_mask, _), (x_cond, x_cond_name, x_cond_mask, _) = batch
+        is_cam_pose = True if len(batch) == 3 else False
+
+        if is_cam_pose == False:
+            (x, x_name, x_mask, _), (x_cond, x_cond_name, x_cond_mask, _) = batch
+            cam_params = None
+        else:
+            (x, x_name, x_mask, _), (x_cond, x_cond_name, x_cond_mask, _), cam_params = batch
+            cam_params = cam_params.to(self.config.training.device[0])
+
         x = x.to(self.config.training.device[0])
         x_cond = x_cond.to(self.config.training.device[0])
-        loss, additional_info = net(x, x_mask, x_cond, x_cond_mask, self.config.training.loss_type)
+        loss, additional_info = net(x, x_mask, x_cond, x_cond_mask, self.config.training.loss_type, cam_params = cam_params)
         if write and self.is_main_process:
             self.writer.add_scalar(f"loss/{stage}", loss, step)
             if additional_info.__contains__("recloss_noise"):
@@ -235,13 +243,20 @@ class BBDMRunner(DiffusionBaseRunner):
         )
 
         print(sample_path)
+        is_cam_pose = True if len(batch) == 3 else False
 
-        (x, x_name, _, _), (x_cond, x_cond_name, _, _) = batch
+        if is_cam_pose == False:
+            (x, x_name, _, _), (x_cond, x_cond_name, _, _) = batch
+            cam_params = None
+        else:
+            (x, x_name, _, _), (x_cond, x_cond_name, _, _), cam_params = batch
 
         batch_size = x.shape[0] if x.shape[0] < 4 else 4
 
         x = x[0:batch_size].to(self.config.training.device[0])
         x_cond = x_cond[0:batch_size].to(self.config.training.device[0])
+        if cam_params is not None:
+            cam_params = cam_params[0:batch_size].to(self.config.training.device[0])
 
         grid_size = 4
 
@@ -255,7 +270,7 @@ class BBDMRunner(DiffusionBaseRunner):
         #                  writer_tag=f'{stage}_one_step_sample' if stage != 'test' else None)
         #
         # sample = samples[-1]
-        sample = net.sample(x_cond, clip_denoised=self.config.testing.clip_denoised).to(
+        sample = net.sample(x_cond, clip_denoised=self.config.testing.clip_denoised,cam_params = cam_params).to(
             "cpu"
         )
         image_grid = get_image_grid(

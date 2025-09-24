@@ -15,6 +15,63 @@ def disabled_train(self, mode=True):
     does not change anymore."""
     return self
 
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+
+class CameraConditionedEncoder(nn.Module):
+    """
+    Wraps an encoder to inject camera info into its latent representation.
+    - cam: [B, 6]
+    - x:   [B, C, H, W]
+    """
+    def __init__(
+        self,
+        latent_ch: int = 3,
+        cam_dim: int = 6,
+        mlp_hidden: int = 64,
+        out_cam_dim: int = 10,
+    ):
+        super().__init__()
+        self.out_cam_dim = out_cam_dim
+
+        # ---- 3-layer MLP for camera values ----
+        self.cam_mlp = nn.Sequential(
+            nn.Linear(cam_dim, mlp_hidden),
+            nn.ReLU(inplace=True),
+            nn.Linear(mlp_hidden, mlp_hidden),
+            nn.ReLU(inplace=True),
+            nn.Linear(mlp_hidden, out_cam_dim),
+        )
+
+        # always have a projection layer
+        self.cam_proj = nn.Conv2d(
+            latent_ch + out_cam_dim,
+            latent_ch,
+            kernel_size=1,
+        )
+
+    def forward(self, z: torch.Tensor, cam: torch.Tensor) -> torch.Tensor:
+        """
+        x   : [B, C, H, W]   (image)
+        cam : [B, cam_dim]   (camera)
+        """
+        # 1) Encode image
+        B, C, H, W = z.shape
+
+        # 2) Pass camera through MLP
+        cam_feat = self.cam_mlp(cam)        # [B, out_cam_dim]
+        cam_feat = cam_feat.view(B, -1, 1, 1).expand(-1, -1, H, W)
+
+        # 3) Concat along channel axis
+        z_cat = torch.cat([z, cam_feat], dim=1)  # [B, C + out_cam_dim, H, W]
+
+        # 4) Project back to latent_ch
+        z_proj = self.cam_proj(z_cat)
+
+        return z_proj
+
 
 class LatentBrownianBridgeModel(BrownianBridgeModel):
     def __init__(self, model_config):
@@ -24,8 +81,7 @@ class LatentBrownianBridgeModel(BrownianBridgeModel):
         self.vqgan.train = disabled_train
         for param in self.vqgan.parameters():
             param.requires_grad = False
-        print(f"load vqgan from {model_config.VQGAN.params.ckpt_path}")
-
+        print(f"load vqgan from {model_config.VQGAN.params.ckpt_path}")        
         # Condition Stage Model
         if self.condition_key == "nocond":
             self.cond_stage_model = None
@@ -37,6 +93,9 @@ class LatentBrownianBridgeModel(BrownianBridgeModel):
             )
         else:
             raise NotImplementedError
+        
+        self.cam_encoder = CameraConditionedEncoder() if model_config.CameraProj.use_cam_proj else None
+
 
     def get_ema_net(self):
         return self
@@ -119,18 +178,20 @@ class LatentBrownianBridgeModel(BrownianBridgeModel):
         return torch.stack(resized_masks)  # shape: (B, 1, new_H, new_W)
 
 
-    def forward(self, x, x_mask, x_cond, x_cond_mask, loss_type = 'general', context=None, lambda_fg=1.0, lambda_bg=1.0):
+    def forward(self, x, x_mask, x_cond, x_cond_mask, loss_type = 'general', context=None, lambda_fg=1.0, lambda_bg=1.0, cam_params = None):
         # x = x_0 = franka image
         # x_cond = x_T = xArm image
 
         with torch.no_grad():
             x_latent = self.encode(x, cond=False)
             x_cond_latent = self.encode(x_cond, cond=True)
+        if cam_params is not None and self.cam_encoder is not None:
+            x_cond_latent = self.cam_encoder(x_cond_latent, cam_params)
 
         context = self.get_cond_stage_context(x_cond)  # None
         latent_loss, log_dict = super().forward(x_latent.detach(), x_cond_latent.detach(), context, self.resize_and_dilate_masks(x_mask,kernel_size=2,iterations=1),self.resize_and_dilate_masks(x_cond_mask,kernel_size=2,iterations=1))
 
-        if loss_type == 'no-mask':
+        if loss_type == 'latent-mask-loss':
             return latent_loss,log_dict
 
         x0_recon = log_dict["x0_recon"]
@@ -264,8 +325,11 @@ class LatentBrownianBridgeModel(BrownianBridgeModel):
         return out
 
     @torch.no_grad()
-    def sample(self, x_cond, clip_denoised=False, sample_mid_step=False):
+    def sample(self, x_cond, clip_denoised=False, sample_mid_step=False, cam_params = None):
         x_cond_latent = self.encode(x_cond, cond=True)
+        if cam_params is not None and self.cam_encoder is not None:
+            x_cond_latent = self.cam_encoder(x_cond_latent, cam_params)
+
         if sample_mid_step:
             temp, one_step_temp = self.p_sample_loop(
                 y=x_cond_latent,

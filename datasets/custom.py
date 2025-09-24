@@ -78,6 +78,106 @@ class CustomAlignedDataset(Dataset):
     def __getitem__(self, i):
         return self.imgs_ori[i], self.imgs_cond[i]
 
+@Registers.datasets.register_with_name("custom_aligned_camera")
+class CustomAlignedDatasetCamera(Dataset):
+    def __init__(self, dataset_config, stage="train"):
+        super().__init__()
+        self.image_size = (dataset_config.image_size, dataset_config.image_size)
+        image_paths_ori = get_image_paths_from_dir(
+            os.path.join(dataset_config.dataset_path, f"{stage}/B")
+        )
+        mask_paths_ori = get_image_paths_from_dir(
+            os.path.join(dataset_config.dataset_path, f"{stage}/B-masks")
+        )
+        image_paths_cond = get_image_paths_from_dir(
+            os.path.join(dataset_config.dataset_path, f"{stage}/A")
+        )
+        mask_paths_cond = get_image_paths_from_dir(
+            os.path.join(dataset_config.dataset_path, f"{stage}/A-masks")
+        )
+        self.flip = dataset_config.flip if stage == "train" else False
+        self.to_normal = dataset_config.to_normal
+        self.imgs_ori = ImagePathDataset(
+            image_paths_ori, mask_paths_ori, self.image_size,
+            flip=self.flip, to_normal=self.to_normal
+        )
+        self.imgs_cond = ImagePathDataset(
+            image_paths_cond, mask_paths_cond, self.image_size,
+            flip=self.flip, to_normal=self.to_normal
+        )
+        # ---- load all camera parameters once ----
+        if dataset_config.use_cam_params:
+            self.cam_vals = []
+            cam_dir = os.path.join(dataset_config.dataset_path, f"{stage}/cam_pose")
+            for path in image_paths_ori:
+                stem = Path(path).stem
+                txt_file = os.path.join(cam_dir, f"{stem}.txt")
+                with open(txt_file, "r") as f:
+                    vals = [float(x) for x in f.read().strip().split()]
+                if len(vals) != 6:
+                    raise ValueError(f"{txt_file}: expected 6 values, got {len(vals)}")
+                self.cam_vals.append(torch.tensor(vals, dtype=torch.float32))
+        else:
+            self.cam_vals = None
+    def __len__(self):
+        return len(self.imgs_ori)
+    def __getitem__(self, idx):
+        if self.cam_vals is not None:
+            cam_vals = self.cam_vals[idx]  # already a tensor
+            return self.imgs_ori[idx], self.imgs_cond[idx], cam_vals
+        return self.imgs_ori[idx], self.imgs_cond[idx]
+
+@Registers.datasets.register_with_name("custom_aligned_camera")
+class CustomAlignedDistanceFields(Dataset):
+    def __init__(self, dataset_config, stage="train"):
+        super().__init__()
+        self.image_size = (dataset_config.image_size, dataset_config.image_size)
+        image_paths_ori = get_image_paths_from_dir(
+            os.path.join(dataset_config.dataset_path, f"{stage}/B")
+        )
+        mask_paths_ori = get_image_paths_from_dir(
+            os.path.join(dataset_config.dataset_path, f"{stage}/B-masks")
+        )
+        image_paths_cond = get_image_paths_from_dir(
+            os.path.join(dataset_config.dataset_path, f"{stage}/A")
+        )
+        mask_paths_cond = get_image_paths_from_dir(
+            os.path.join(dataset_config.dataset_path, f"{stage}/A-masks")
+        )
+        self.flip = dataset_config.flip if stage == "train" else False
+        self.to_normal = dataset_config.to_normal
+        self.imgs_ori = ImagePathDataset(
+            image_paths_ori, mask_paths_ori, self.image_size,
+            flip=self.flip, to_normal=self.to_normal
+        )
+        self.imgs_cond = ImagePathDataset(
+            image_paths_cond, mask_paths_cond, self.image_size,
+            flip=self.flip, to_normal=self.to_normal
+        )
+        # ---- load all camera parameters once ----
+        if dataset_config.use_cam_params:
+            self.cam_vals = []
+            cam_dir = os.path.join(dataset_config.dataset_path, f"{stage}/cam_pose")
+            for path in image_paths_ori:
+                stem = Path(path).stem
+                txt_file = os.path.join(cam_dir, f"{stem}.txt")
+                with open(txt_file, "r") as f:
+                    vals = [float(x) for x in f.read().strip().split()]
+                if len(vals) != 6:
+                    raise ValueError(f"{txt_file}: expected 6 values, got {len(vals)}")
+                self.cam_vals.append(torch.tensor(vals, dtype=torch.float32))
+        else:
+            self.cam_vals = None
+    def __len__(self):
+        return len(self.imgs_ori)
+    def __getitem__(self, idx):
+        if self.cam_vals is not None:
+            cam_vals = self.cam_vals[idx]  # already a tensor
+            return self.imgs_ori[idx], self.imgs_cond[idx], cam_vals
+        return self.imgs_ori[idx], self.imgs_cond[idx]
+
+
+
 
 @Registers.datasets.register_with_name("custom_colorization_LAB")
 class CustomColorizationLABDataset(Dataset):
